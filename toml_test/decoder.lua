@@ -12,12 +12,12 @@ local function encode_json(value)
     if t == "nil" then
         return "null"
     elseif t == "boolean" then
-        return tostring(value)
+        return '{"type":"bool","value":"' .. tostring(value) .. '"}'
     elseif t == "number" then
         if value == math.floor(value) then
-            return string.format("%d", value)
+            return '{"type":"integer","value":"' .. string.format("%d", value) .. '"}'
         else
-            return string.format("%.10g", value)
+            return '{"type":"float","value":"' .. string.format("%.10g", value) .. '"}'
         end
     elseif t == "string" then
         -- Escape string for JSON
@@ -28,7 +28,7 @@ local function encode_json(value)
                            :gsub("\n", "\\n")
                            :gsub("\r", "\\r")
                            :gsub("\t", "\\t")
-        return '"' .. escaped .. '"'
+        return '{"type":"string","value":"' .. escaped .. '"}'
     elseif t == "table" then
         -- Check if it's a date (has metatable)
         if TOML.isdate(value) then
@@ -89,7 +89,10 @@ local function encode_json(value)
             
             for _, k in ipairs(keys) do
                 local v = value[k]
-                table.insert(parts, encode_json(tostring(k)) .. ":" .. encode_json(v))
+                -- Keys should be plain strings, not tagged
+                local key_str = tostring(k)
+                local escaped_key = key_str:gsub("\\", "\\\\"):gsub("\"", "\\\"")
+                table.insert(parts, '"' .. escaped_key .. '":' .. encode_json(v))
             end
             return "{" .. table.concat(parts, ",") .. "}"
         end
