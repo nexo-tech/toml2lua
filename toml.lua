@@ -19,12 +19,7 @@ TOML.parse = function(toml, options)
 	local ws = "[\009\032]"
 
 	-- the official TOML definition of newline
-	local nl = "[\10"
-	do
-		local crlf = "\13\10"
-		nl = nl .. crlf
-	end
-	nl = nl .. "]"
+	local nl = "[\10]"  -- LF only
 	
 	-- stores text data
 	local buffer = ""
@@ -42,6 +37,16 @@ TOML.parse = function(toml, options)
 	local function char(n)
 		n = n or 0
 		return toml:sub(cursor + n, cursor + n)
+	end
+
+	-- function to check if current position is at a newline (LF or CRLF)
+	local function isNewline()
+		if char() == "\10" then  -- LF
+			return true
+		elseif char() == "\13" and char(1) == "\10" then  -- CRLF
+			return true
+		end
+		return false
 	end
 
 	-- moves the current position forward n (default: 1) characters
@@ -112,9 +117,13 @@ TOML.parse = function(toml, options)
 		step(multiline and 3 or 1)
 
 		while(bounds()) do
-			if multiline and char():match(nl) and str == "" then
+			if multiline and isNewline() and str == "" then
 				-- skip line break line at the beginning of multiline string
-				step()
+				if char() == "\13" and char(1) == "\10" then
+					step(2)  -- skip CRLF
+				else
+					step()   -- skip LF
+				end
 			end
 
 			-- keep going until we encounter the quote character again
@@ -130,20 +139,28 @@ TOML.parse = function(toml, options)
 				end
 			end
 
-			if char():match(nl) and not multiline then
+			if isNewline() and not multiline then
 				err("Single-line string cannot contain line break")
 			end
 
 			-- if we're in a double-quoted string, watch for escape characters!
 			if quoteType == '"' and char() == "\\" then
-				if multiline and char(1):match(nl) then
+				if multiline and (char(1) == "\10" or (char(1) == "\13" and char(2) == "\10")) then
 					-- skip until first non-whitespace character
 					step(1) -- go past the line break
 					while(bounds()) do
-						if not char():match(ws) and not char():match(nl) then
+						if not char():match(ws) and not isNewline() then
 							break
 						end
-						step()
+						if isNewline() then
+							if char() == "\13" and char(1) == "\10" then
+								step(2)  -- skip CRLF
+							else
+								step()   -- skip LF
+							end
+						else
+							step()
+						end
 					end
 				else
 					-- all available escape characters
