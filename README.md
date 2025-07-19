@@ -69,4 +69,10 @@ Includes pull requests and contributions from:
 - [Natanael Copa](https://github.com/ncopa) — fix encoding of plain ol borring arrays (issue [#12](https://github.com/jonstoler/lua-toml/issues/12))
 - [Luka Vandervelden](https://github.com/Lukc) — Lua 5.1 marked as supported in the rockspec. (issue [#20](https://github.com/jonstoler/lua-toml/issues/20))
 - [Ekaterina Vaartis](https://github.com/vaartis) - Don't replace / with \/, because the library can't decode that back
-- Work on issues [#11](https://github.com/jonstoler/lua-toml/issues/11) [#17](https://github.com/jonstoler/lua-toml/issues/17) [#22](https://github.com/jonstoler/lua-toml/issues/22) (+ merged [#20](https://github.com/jonstoler/lua-toml/issues/20) by [@mattwidmann](https://github.com/mattwidmann) and [#18](https://github.com/jonstoler/lua-toml/issues/18) by [@OrenjiAkira](https://github.com/OrenjiAkira)) [#23](https://github.com/jonstoler/lua-toml/issues/23)
+- Work on issues by [pocomane](https://github.com/pocomane):
+  - [#11](https://github.com/jonstoler/lua-toml/issues/11)
+  - [#17](https://github.com/jonstoler/lua-toml/issues/17)
+  - [#22](https://github.com/jonstoler/lua-toml/issues/22)
+  - [#20](https://github.com/jonstoler/lua-toml/issues/20)
+  - [#18](https://github.com/jonstoler/lua-toml/issues/18)
+  - [#23](https://github.com/jonstoler/lua-toml/issues/23)
