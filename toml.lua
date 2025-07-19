@@ -116,6 +116,12 @@ TOML.multistep_parser = function (options)
 		return toml:sub( cursor + a, cursor + b )
 	end
 
+	-- returns the next n characters from the current position
+	local function char(n)
+		n = n or 0
+		return getData(n, n)
+	end
+
 	-- count how many new lines are in the next n chars
 	local function count_source_line(n)
 		local count = 0
@@ -153,12 +159,6 @@ TOML.multistep_parser = function (options)
 	-- Check if we are at end of the data
 	local function dataEnd()
 		return cursor >= toml:len()
-	end
-
-	-- returns the next n characters from the current position
-	local function char(n)
-		n = n or 0
-		return getData(n, n)
 	end
 
 	-- Match official TOML definition of whitespace

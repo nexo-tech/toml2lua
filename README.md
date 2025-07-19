@@ -68,3 +68,4 @@ Includes pull requests and contributions from:
 - [Natanael Copa](https://github.com/ncopa) — fix encoding of plain ol borring arrays (issue #12)
 - [Luka Vandervelden](https://github.com/Lukc) — Lua 5.1 marked as supported in the rockspec. (issue #20)
 - [Ekaterina Vaartis](https://github.com/vaartis) - Don't replace / with \/, because the library can't decode that back
+-  Work on issues #11 #17 #22 (+ merged #20 by @mattwidmann and #18 by @OrenjiAkira) #23
