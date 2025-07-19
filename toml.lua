@@ -1,6 +1,6 @@
 local TOML = {
 	-- denotes the current supported TOML version
-	version = 0.40,
+	version = "1.0.0",
 
 	-- sets whether the parser should follow the TOML spec strictly
 	-- currently, no errors are thrown for the following rules if strictness is turned off:
@@ -41,7 +41,43 @@ local date_metatable = {
 local setmetatable, getmetatable = setmetatable, getmetatable
 
 TOML.datefy = function( tab )
-	-- TODO : VALIDATE !
+	-- Validate date/time components
+	if tab.year and (tab.year < 0 or tab.year > 9999) then
+		return nil, "Invalid year"
+	end
+	if tab.month and (tab.month < 1 or tab.month > 12) then
+		return nil, "Invalid month"
+	end
+	if tab.day and (tab.day < 1 or tab.day > 31) then
+		return nil, "Invalid day"
+	end
+	if tab.hour and (tab.hour < 0 or tab.hour > 23) then
+		return nil, "Invalid hour"
+	end
+	if tab.min and (tab.min < 0 or tab.min > 59) then
+		return nil, "Invalid minute"
+	end
+	if tab.sec and (tab.sec < 0 or tab.sec > 60) then  -- Allow leap seconds
+		return nil, "Invalid second"
+	end
+	if tab.zone and (tab.zone < -23 or tab.zone > 23) then
+		return nil, "Invalid timezone"
+	end
+	
+	-- Additional validation for day based on month/year
+	if tab.year and tab.month and tab.day then
+		local days_in_month = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+		
+		-- Check for leap year
+		if tab.month == 2 and ((tab.year % 4 == 0 and tab.year % 100 ~= 0) or (tab.year % 400 == 0)) then
+			days_in_month[2] = 29
+		end
+		
+		if tab.day > days_in_month[tab.month] then
+			return nil, "Invalid day for month"
+		end
+	end
+	
 	return setmetatable(tab, date_metatable)
 end
 
@@ -533,17 +569,18 @@ TOML.multistep_parser = function (options)
 			end
 		end
 
-		exp = exp and tonumber(exp) or 0
-		if exp > 0 then
-			exp = math.floor(10 ^ exp)
-		elseif exp < 0 then
-			exp = 10 ^ exp
-		elseif exp == 0 then
-			exp = 1
+		local exp_val = exp and tonumber(exp) or 0
+		local multiplier = 1
+		if exp_val > 0 then
+			multiplier = math.floor(10 ^ exp_val)
+		elseif exp_val < 0 then
+			multiplier = 10 ^ exp_val
+		elseif exp_val == 0 then
+			multiplier = 1
 		end
-		num = tonumber(num) * exp
+		num = tonumber(num) * multiplier
 
-		if exp < 0 or dotfound then
+		if exp_val < 0 or dotfound then
 			return {value = num, type = "float"}
 		end
 		return {value = num, type = "integer"}
@@ -574,11 +611,12 @@ TOML.multistep_parser = function (options)
 				local v = getValue()
 				if not v then break end
 
-				-- set the type if it hasn't been set before
+				-- v1.0.0 allows mixed types in arrays
 				if arrayType == nil then
 					arrayType = v.type
 				elseif arrayType ~= v.type then
-					err("Mixed types in array", true)
+					-- Mixed types are allowed in v1.0.0, so just update arrayType to indicate mixed
+					arrayType = "mixed"
 				end
 
 				array = array or {}
@@ -658,6 +696,24 @@ TOML.multistep_parser = function (options)
 		elseif getData(0, 4) == "false" then
 			step(5)
 			v = {value = false, type = "boolean"}
+		elseif getData(0, 2) == "inf" then
+			step(3)
+			v = {value = math.huge, type = "float"}
+		elseif getData(0, 3) == "+inf" then
+			step(4)
+			v = {value = math.huge, type = "float"}
+		elseif getData(0, 3) == "-inf" then
+			step(4)
+			v = {value = -math.huge, type = "float"}
+		elseif getData(0, 2) == "nan" then
+			step(3)
+			v = {value = 0/0, type = "float"}
+		elseif getData(0, 3) == "+nan" then
+			step(4)
+			v = {value = 0/0, type = "float"}
+		elseif getData(0, 3) == "-nan" then
+			step(4)
+			v = {value = 0/0, type = "float"}
 		else
 			err("Invalid primitive")
 		end
@@ -680,6 +736,9 @@ TOML.multistep_parser = function (options)
 			return parseDate()
 		elseif getData(0,3):match("^%d%d%:%d") then
 			return parseTime()
+		elseif getData(0, 2) == "inf" or getData(0, 3) == "+inf" or getData(0, 3) == "-inf" or
+		       getData(0, 2) == "nan" or getData(0, 3) == "+nan" or getData(0, 3) == "-nan" then
+			return parseBoolean()  -- Special float values handled in parseBoolean
 		elseif char():match("[%+%-0-9]") then
 			return parseNumber()
 		elseif char() == "[" then
@@ -799,22 +858,77 @@ TOML.multistep_parser = function (options)
 					buffer = trim(buffer)
 				end
 
-				if not quotedKey then check_key() end
-
-				if buffer:match("^[0-9]+$") and not quotedKey then
-					buffer = tonumber(buffer)
-				end
-
-				if buffer == "" and not quotedKey then
-					err("Empty key name")
-				end
-				local v = getValue()
-				if v then
-					-- if the key already exists in the current object, throw an error
-					if obj[buffer] ~= nil then
-						err('Cannot redefine key "' .. buffer .. '"', true)
+				-- Handle dotted keys in regular key-value pairs
+				if buffer:find("%.") and not quotedKey then
+					-- Split the key on dots and create nested tables
+					local keys = {}
+					for key in buffer:gmatch("[^%.]+") do
+						table.insert(keys, key)
 					end
-					obj[buffer] = v.value
+					
+					-- Validate each key segment
+					for _, key in ipairs(keys) do
+						local tempBuffer = key
+						if tempBuffer:match("[%s%c%%%(%)%*%+%.%?%[%]!\"#$&',/:;<=>@`\\^{|}~]") then
+							err('Invalid character in key')
+						end
+					end
+					
+					-- Navigate/create the nested structure
+					local currentObj = obj
+					local conflictDetected = false
+					for i = 1, #keys - 1 do
+						local key = keys[i]
+						if key:match("^[0-9]+$") then
+							key = tonumber(key)
+						end
+						if not currentObj[key] then
+							currentObj[key] = {}
+						elseif type(currentObj[key]) ~= "table" then
+							err('Cannot create table: key "' .. key .. '" already has a non-table value')
+							conflictDetected = true
+							break
+						end
+						currentObj = currentObj[key]
+					end
+					
+					-- Set the final key only if no conflict was detected
+					if not conflictDetected then
+						local finalKey = keys[#keys]
+						if finalKey:match("^[0-9]+$") then
+							finalKey = tonumber(finalKey)
+						end
+						
+						local v = getValue()
+						if v then
+							if currentObj[finalKey] ~= nil then
+								err('Cannot redefine key "' .. finalKey .. '"', true)
+							end
+							currentObj[finalKey] = v.value
+						end
+					else
+						-- Still need to consume the value even if there was a conflict
+						getValue()
+					end
+				else
+					-- Regular key handling
+					if not quotedKey then check_key() end
+
+					if buffer:match("^[0-9]+$") and not quotedKey then
+						buffer = tonumber(buffer)
+					end
+
+					if buffer == "" and not quotedKey then
+						err("Empty key name")
+					end
+					local v = getValue()
+					if v then
+						-- if the key already exists in the current object, throw an error
+						if obj[buffer] ~= nil then
+							err('Cannot redefine key "' .. buffer .. '"', true)
+						end
+						obj[buffer] = v.value
+					end
 				end
 
 				-- clear the buffer
@@ -950,7 +1064,16 @@ TOML.encode = function(tbl)
 			if type(v) == "boolean" then
 				toml = toml .. k .. " = " .. tostring(v) .. "\n"
 			elseif type(v) == "number" then
-				toml = toml .. k .. " = " .. tostring(v) .. "\n"
+				-- Handle special float values for v1.0.0 compatibility
+				if v == math.huge then
+					toml = toml .. k .. " = inf\n"
+				elseif v == -math.huge then
+					toml = toml .. k .. " = -inf\n"
+				elseif v ~= v then  -- NaN check (NaN != NaN)
+					toml = toml .. k .. " = nan\n"
+				else
+					toml = toml .. k .. " = " .. tostring(v) .. "\n"
+				end
 			elseif type(v) == "string" then
 				local quote = '"'
 				v = v:gsub("\\", "\\\\")
