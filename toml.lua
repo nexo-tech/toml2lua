@@ -628,7 +628,7 @@ TOML.multistep_parser = function (options)
 
 		skipWhitespace()
 		if char() == "#" then
-			while(not matchnl()) do
+			while(bounds() and not matchnl()) do
 				step()
 			end
 		end
@@ -741,12 +741,12 @@ TOML.multistep_parser = function (options)
 		-- parse the document!
 		while(bounds()) do
 	
-			-- skip comments and whitespace
-			if char() == "#" then
-				while(not matchnl()) do
-					step()
-				end
+					-- skip comments and whitespace
+		if char() == "#" then
+			while(bounds() and not matchnl()) do
+				step()
 			end
+		end
 
 			if matchnl() then
 				if trim(buffer) ~= '' then
@@ -889,8 +889,28 @@ TOML.encode = function(tbl)
 
 	local cache = {}
 
+	-- Helper function to get sorted keys for consistent output order
+	local function getSortedKeys(t)
+		local keys = {}
+		for k in pairs(t) do
+			table.insert(keys, k)
+		end
+		-- Sort keys, handling mixed types gracefully
+		table.sort(keys, function(a, b)
+			local ta, tb = type(a), type(b)
+			if ta == tb then
+				return tostring(a) > tostring(b)  -- Reverse alphabetical order
+			else
+				return ta < tb  -- type names sorted alphabetically
+			end
+		end)
+		return keys
+	end
+
 	local function parse(tbl)
-		for k, v in pairs(tbl) do
+		local keys = getSortedKeys(tbl)
+		for _, k in ipairs(keys) do
+			local v = tbl[k]
 			if type(v) == "boolean" then
 				toml = toml .. k .. " = " .. tostring(v) .. "\n"
 			elseif type(v) == "number" then
@@ -994,7 +1014,9 @@ TOML.encode = function(tbl)
 							table.insert(cache, k)
 							for kk, vv in pairs(v) do
 								toml = toml .. "[[" .. table.concat(cache, ".") .. "]]\n"
-								for k3, v3 in pairs(vv) do
+								local sortedKeys = getSortedKeys(vv)
+								for _, k3 in ipairs(sortedKeys) do
+									local v3 = vv[k3]
 									if type(v3) ~= "table" then
 										vv[k3] = nil
 										first[k3] = v3
