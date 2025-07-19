@@ -54,13 +54,12 @@ bare-key = "value"
 	end)
 
 	it("empty quoted keys", function()
-		local obj = TOML.parse[=[
+		-- In v1.0.0, redefining keys is invalid, even empty ones
+		local obj, err = TOML.parse[=[
 "" = "blank"
 '' = 'blank2']=]
-		local sol = {
-			[""] = "blank2"  -- second one overwrites first
-		}
-		assert.same(sol, obj)
+		assert.same(nil, obj)
+		assert.same('string', type(err))
 	end)
 
 	it("dotted keys - basic", function()
@@ -98,17 +97,13 @@ fruit . flavor = "banana"]=]
 	end)
 
 	it("dotted keys - mixed quoted and bare", function()
-		local obj = TOML.parse[=[
+		-- In v1.0.0, bare and quoted keys are equivalent, so this is key redefinition
+		local obj, err = TOML.parse[=[
 a.b = 1
 "a"."b" = 2
 'a'.'b' = 3]=]
-		-- All refer to the same key, last one wins
-		local sol = {
-			a = {
-				b = 3
-			}
-		}
-		assert.same(sol, obj)
+		assert.same(nil, obj)
+		assert.same('string', type(err))
 	end)
 
 	it("dotted keys - complex", function()
@@ -143,10 +138,10 @@ fruit."red apple".sweet = true]=]
 	end)
 
 	it("invalid bare key characters", function()
-		-- These should fail
+		-- These should fail (excluding "." since it creates valid dotted keys)
 		local invalid_chars = {"$", "!", "@", "#", "%", "^", "&", "*", "(", ")", "+", "=", 
 		                       "[", "]", "{", "}", "|", "\\", ":", ";", "'", '"', 
-		                       "<", ">", ",", ".", "?", "/", "`", "~", " "}
+		                       "<", ">", ",", "?", "/", "`", "~", " "}
 		
 		for _, char in ipairs(invalid_chars) do
 			local toml_str = "key" .. char .. "name = 'value'"
@@ -154,6 +149,12 @@ fruit."red apple".sweet = true]=]
 			assert.same(nil, obj, "Should fail for character: " .. char)
 			assert.same('string', type(err), "Should have error for character: " .. char)
 		end
+		
+		-- Test that dot creates valid dotted keys (not an error)
+		local obj, err = TOML.parse('key.name = "value"')
+		assert.same(nil, err)  -- Should succeed
+		assert.same('table', type(obj))
+		assert.same({key = {name = "value"}}, obj)
 	end)
 
 	it("empty key error", function()

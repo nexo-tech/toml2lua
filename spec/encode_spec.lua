@@ -33,13 +33,13 @@ describe("encoding", function()
 		assert.same(original_data, loaded_data)
 	end)
 
-	it("mixed string and number arrays should fail parsing", function()
-		-- This should encode but fail to parse due to type mismatch
+	it("mixed string and number arrays should parse successfully", function()
+		-- Mixed arrays are allowed in TOML v1.0.0
 		local data = { mixed = { "string", 42 } }
 		local encoded = TOML.encode(data)
 		local result, err = TOML.parse(encoded)
-		assert.same(nil, result)
-		assert.same('string', type(err))
+		assert.same(data, result)
+		assert.same(nil, err)
 	end)
 
 	it("array of arrays with mixed integer and float", function()

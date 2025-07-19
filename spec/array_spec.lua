@@ -101,7 +101,10 @@ tables = [
 	it("mixed number array", function()
 		local obj, err = TOML.parse[=[
 mix = [1.0, 2] ]=]
-		assert.same(nil, obj)
-		assert.same('string', type(err))
+		local sol = {
+			mix = {1.0, 2}
+		}
+		assert.same(sol, obj)
+		assert.same(nil, err)
 	end)
 end)

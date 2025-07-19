@@ -58,8 +58,9 @@ date = 1937-01-01]=]
 	end)
 
 	it("time only", function()
+		-- According to TOML v1.0.0, local times should not have timezone info
 		local obj = TOML.parse[=[
-time = 12:00:27.87Z]=]
+time = 12:00:27.87]=]
 		local sol = {
 			time = {
 				hour = 12,

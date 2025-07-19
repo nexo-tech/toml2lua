@@ -110,7 +110,7 @@ TOML.multistep_parser = function (options)
 	local nl_count = 1
 
 	local function result_or_error()
-		if #ERR > 0 then return nil, table.concat(ERR) end
+		if #ERR > 0 then return nil, ERR[1] end
 		return out
 	end
 
@@ -249,6 +249,8 @@ TOML.multistep_parser = function (options)
 		-- skip the quotes
 		step(multiline and 3 or 1)
 
+		local foundClosingQuote = false
+		
 		while(bounds()) do
 			if multiline and matchnl() and str == "" then
 				-- skip line break line at the beginning of multiline string
@@ -264,10 +266,12 @@ TOML.multistep_parser = function (options)
 				if multiline then
 					if char(1) == char(2) and char(1) == quoteType then
 						step(3)
+						foundClosingQuote = true
 						break
 					end
 				else
 					step()
+					foundClosingQuote = true
 					break
 				end
 			end
@@ -364,6 +368,11 @@ TOML.multistep_parser = function (options)
 				str = str .. char()
 				step()
 			end
+		end
+
+		-- If we get here without finding the closing quote, it's an error
+		if not foundClosingQuote then
+			err("Unterminated string")
 		end
 
 		return {value = str, type = "string"}
@@ -628,6 +637,11 @@ TOML.multistep_parser = function (options)
 				skipWhitespace()
 			end
 		end
+		
+		-- Check if we found the closing bracket
+		if not bounds() or char() ~= "]" then
+			err("Missing closing bracket in array")
+		end
 		step()
 
 		return {value = array, type = "array"}
@@ -666,6 +680,10 @@ TOML.multistep_parser = function (options)
 
 				if char() == "," then
 					step()
+					skipWhitespace()
+					if matchnl() then
+						err("Newline in inline table")
+					end
 				elseif matchnl() then
 					err("Newline in inline table")
 				end
@@ -678,10 +696,18 @@ TOML.multistep_parser = function (options)
 						err("Unexpected character after the key")
 					end
 				else
+					if matchnl() then
+						err("Newline in inline table")
+					end
 					buffer = buffer .. char()
 				end
 				step()
 			end
+		end
+		
+		-- Check if we found the closing brace
+		if not bounds() or char() ~= "}" then
+			err("Missing closing brace in inline table")
 		end
 		step() -- skip closing brace
 
@@ -830,37 +856,162 @@ TOML.multistep_parser = function (options)
 			end
 		end
 
+		local function check_key()
+			if buffer == "" then
+				err("Empty key")
+			end
+			if buffer:match("[%s%c%%%(%)%*%+%.%?%[%]!\"#$&',/:;<=>@`\\^{|}~]") and not quotedKey then
+				err('Invalid character in key')
+			end
+		end
+
+		-- avoid double table definition
+		local defined_table = setmetatable({},{__mode='kv'})
+
+		-- keep track of container type i.e. table vs array
+		local container_type = setmetatable({},{__mode='kv'})
+
+		local function processKey(isLast, tableArray, quotedKey)
+			if isLast and obj[buffer] and not tableArray and #obj[buffer] > 0 then
+				err("Cannot redefine table", true)
+			end
+
+			-- set obj to the appropriate table so we can start
+			-- filling it with values!
+			if tableArray then
+				-- push onto cache
+				local current = obj[buffer]
+
+				-- crete as needed + identify table vs array
+				local isArray = false
+				if current then
+					isArray = (container_type[current] == 'array')
+				else
+					current = {}
+					obj[buffer] = current
+					if isLast then
+						isArray = true
+						container_type[current] = 'array'
+					else
+						isArray = false
+						container_type[current] = 'hash'
+					end
+				end
+
+				if isLast and not isArray then
+						err('The selected key contains a table, not an array', true)
+				end
+
+				-- update current object
+				if not isLast then obj = current end
+				if isArray then
+					if isLast then table.insert(current, {}) end
+					obj = current[#current]
+				end
+
+			else
+				local newObj = obj[buffer] or {}
+				obj[buffer] = newObj
+				if #newObj > 0 then
+					if type(newObj) ~= 'table' then
+						err('Duplicate field')
+					else
+						-- an array is already in progress for this key, so modify its
+						-- last element, instead of the array itself
+						obj = newObj[#newObj]
+					end
+				else
+					obj = newObj
+				end
+			end
+			if isLast then
+				if defined_table[obj] then
+					err('Duplicated table definition')
+				end
+				defined_table[obj] = true
+			end
+		end
+
 		-- track whether the current key was quoted or not
 		local quotedKey = false
+		
+		-- track dotted key parsing state
+		local dottedKeyParts = {}
+		local inDottedKey = false
 
 		-- parse the document!
 		while(bounds()) do
 	
-					-- skip comments and whitespace
-		if char() == "#" then
-			while(bounds() and not matchnl()) do
-				step()
+			-- skip comments and whitespace
+			-- Only treat # as comment if we're not in the middle of parsing a key
+			if char() == "#" and (buffer == "" or quotedKey) then
+				while(bounds() and not matchnl()) do
+					step()
+				end
 			end
-		end
 
 			if matchnl() then
 				if trim(buffer) ~= '' then
 					err('Invalid key')
 				end
-			end
-
-			if char() == "=" then
+				buffer = ""
+				dottedKeyParts = {}
+				inDottedKey = false
+				step()
+			elseif char() == "=" then
 				step()
 				skipWhitespace()
 				
-				-- trim key name (only for unquoted keys)
-				if not quotedKey then
-					buffer = trim(buffer)
+				-- Add current buffer to dotted key parts if we're in a dotted key
+				if inDottedKey then
+					if not quotedKey then
+						buffer = trim(buffer)
+					end
+					if buffer ~= "" then
+						table.insert(dottedKeyParts, buffer)
+					end
 				end
 
-				-- Handle dotted keys in regular key-value pairs
-				if buffer:find("%.") and not quotedKey then
-					-- Split the key on dots and create nested tables
+				-- Handle dotted keys vs regular keys
+				if inDottedKey and #dottedKeyParts > 1 then
+					-- This is a dotted key - create nested structure
+					local currentObj = obj
+					local conflictDetected = false
+					
+					for i = 1, #dottedKeyParts - 1 do
+						local key = dottedKeyParts[i]
+						if key:match("^[0-9]+$") then
+							key = tonumber(key)
+						end
+						if not currentObj[key] then
+							currentObj[key] = {}
+						elseif type(currentObj[key]) ~= "table" then
+							err('Cannot create table: key "' .. key .. '" already has a non-table value')
+							conflictDetected = true
+							break
+						end
+						currentObj = currentObj[key]
+					end
+					
+					if not conflictDetected then
+						local finalKey = dottedKeyParts[#dottedKeyParts]
+						if finalKey:match("^[0-9]+$") then
+							finalKey = tonumber(finalKey)
+						end
+						
+						local v = getValue()
+						if v then
+							if currentObj[finalKey] ~= nil then
+								err('Cannot redefine key "' .. finalKey .. '"', true)
+							end
+							currentObj[finalKey] = v.value
+						end
+					else
+						-- Still need to consume the value even if there was a conflict
+						getValue()
+					end
+				elseif not quotedKey and buffer:find("%.") then
+					-- Handle simple dotted keys (backward compatibility)
 					local keys = {}
 					for key in buffer:gmatch("[^%.]+") do
 						table.insert(keys, key)
@@ -912,7 +1063,10 @@ TOML.multistep_parser = function (options)
 					end
 				else
 					-- Regular key handling
-					if not quotedKey then check_key() end
+					if not quotedKey then 
+						buffer = trim(buffer)
+						check_key() 
+					end
 
 					if buffer:match("^[0-9]+$") and not quotedKey then
 						buffer = tonumber(buffer)
@@ -931,8 +1085,10 @@ TOML.multistep_parser = function (options)
 					end
 				end
 
-				-- clear the buffer
+				-- clear the buffer and reset dotted key state
 				buffer = ""
+				dottedKeyParts = {}
+				inDottedKey = false
 				quotedKey = false
 
 				-- skip whitespace and comments
@@ -1007,6 +1163,24 @@ TOML.multistep_parser = function (options)
 				if bounds() and (not char():match('#') and not matchnl()) then
 					err("Something found on the same line of a table definition")
 				end
+			elseif char() == "." then
+				-- Handle dot in dotted key
+				if buffer == "" then
+					err("Empty key segment before dot")
+				end
+				
+				-- Add current buffer content to dotted key parts
+				if not quotedKey then
+					buffer = trim(buffer)
+				end
+				if buffer == "" then
+					err("Empty key segment")
+				end
+				table.insert(dottedKeyParts, buffer)
+				inDottedKey = true
+				buffer = ""
+				quotedKey = false
+				step()
 			elseif (char() == '"' or char() == "'") then
 				-- quoted key
 				buffer = parseString().value
@@ -1018,6 +1192,11 @@ TOML.multistep_parser = function (options)
 				end
 				step()
 			end
+		end
+
+		-- Check for incomplete line at end of file
+		if trim(buffer) ~= '' then
+			err('Invalid key')
 		end
 
 		return result_or_error()
@@ -1039,6 +1218,35 @@ TOML.encode = function(tbl)
 
 	local cache = {}
 
+	-- Helper function to encode keys properly according to TOML v1.0.0 spec
+	local function encodeKey(key)
+		local keyStr = tostring(key)
+		
+		-- Empty keys must be quoted
+		if keyStr == "" then
+			return '""'
+		end
+		
+		-- Check if the key needs quoting (contains special characters)
+		-- Bare keys may only contain ASCII letters, ASCII digits, underscores, and dashes (A-Za-z0-9_-)
+		if keyStr:match("^[A-Za-z0-9_%-]+$") then
+			return keyStr
+		else
+			-- Key needs to be quoted, escape quotes and backslashes
+			local escapedKey = keyStr:gsub("\\", "\\\\"):gsub('"', '\\"')
+			return '"' .. escapedKey .. '"'
+		end
+	end
+
+	-- Helper function to encode dotted table names
+	local function encodeDottedName(keyList)
+		local encodedKeys = {}
+		for i, key in ipairs(keyList) do
+			table.insert(encodedKeys, encodeKey(key))
+		end
+		return table.concat(encodedKeys, ".")
+	end
+
 	-- Helper function to get sorted keys for consistent output order
 	local function getSortedKeys(t)
 		local keys = {}
@@ -1059,20 +1267,22 @@ TOML.encode = function(tbl)
 
 	local function parse(tbl)
 		local keys = getSortedKeys(tbl)
+		
+		-- First pass: handle all non-table values
 		for _, k in ipairs(keys) do
 			local v = tbl[k]
 			if type(v) == "boolean" then
-				toml = toml .. k .. " = " .. tostring(v) .. "\n"
+				toml = toml .. encodeKey(k) .. " = " .. tostring(v) .. "\n"
 			elseif type(v) == "number" then
 				-- Handle special float values for v1.0.0 compatibility
 				if v == math.huge then
-					toml = toml .. k .. " = inf\n"
+					toml = toml .. encodeKey(k) .. " = inf\n"
 				elseif v == -math.huge then
-					toml = toml .. k .. " = -inf\n"
+					toml = toml .. encodeKey(k) .. " = -inf\n"
 				elseif v ~= v then  -- NaN check (NaN != NaN)
-					toml = toml .. k .. " = nan\n"
+					toml = toml .. encodeKey(k) .. " = nan\n"
 				else
-					toml = toml .. k .. " = " .. tostring(v) .. "\n"
+					toml = toml .. encodeKey(k) .. " = " .. tostring(v) .. "\n"
 				end
 			elseif type(v) == "string" then
 				local quote = '"'
@@ -1091,10 +1301,167 @@ TOML.encode = function(tbl)
 				v = v:gsub("\f", "\\f")
 				v = v:gsub("\r", "\\r")
 				v = v:gsub('"', '\\"')
-				toml = toml .. k .. " = " .. quote .. v .. quote .. "\n"
+				toml = toml .. encodeKey(k) .. " = " .. quote .. v .. quote .. "\n"
 			elseif type(v) == "table" and getmetatable(v) == date_metatable then
-				toml = toml .. k .. " = " .. tostring(v) .. "\n"
-			elseif type(v) == "table" then
+				toml = toml .. encodeKey(k) .. " = " .. tostring(v) .. "\n"
+			end
+		end
+		
+		-- Second pass: handle simple array values (arrays of non-tables)
+		for _, k in ipairs(keys) do
+			local v = tbl[k]
+			if type(v) == "table" and getmetatable(v) ~= date_metatable then
+				-- Check if this is an array (all numeric keys)
+				local isArray = true
+				local isArrayOfHashTables = true
+				for kk, vv in pairs(v) do
+					if type(kk) ~= "number" then
+						isArray = false
+						break
+					end
+					if type(vv) ~= "table" then
+						isArrayOfHashTables = false
+					else
+						-- Check if the inner table is a hash table (has non-numeric keys)
+						local isHashTable = false
+						local hasKeys = false
+						for kkk, vvv in pairs(vv) do
+							hasKeys = true
+							if type(kkk) ~= "number" then
+								isHashTable = true
+								break
+							end
+						end
+						-- Empty tables are considered hash tables for array of tables syntax
+						if hasKeys and not isHashTable then
+							isArrayOfHashTables = false
+						end
+					end
+				end
+				
+				if isArray and not isArrayOfHashTables then
+					-- Check if this is an array of arrays (all elements are arrays)
+					local isArrayOfArrays = true
+					for kk, vv in pairs(v) do
+						if type(vv) ~= "table" then
+							isArrayOfArrays = false
+							break
+						end
+						-- Check if the inner table is also an array
+						for kkk, vvv in pairs(vv) do
+							if type(kkk) ~= "number" then
+								isArrayOfArrays = false
+								break
+							end
+						end
+						if not isArrayOfArrays then break end
+					end
+					
+					if isArrayOfArrays then
+						-- This is an array of arrays, encode as nested arrays
+						toml = toml .. encodeKey(k) .. " = ["
+						local first_outer = true
+						for kk, vv in pairs(v) do
+							if not first_outer then
+								toml = toml .. ", "
+							end
+							toml = toml .. "["
+							local first_inner = true
+							for kkk, vvv in pairs(vv) do
+								if not first_inner then
+									toml = toml .. ", "
+								end
+								if type(vvv) == "number" then
+									-- Check if any number in any array is a float
+									local hasFloat = false
+									for _, arr in pairs(v) do
+										for _, val in pairs(arr) do
+											if type(val) == "number" and val ~= math.floor(val) then
+												hasFloat = true
+												break
+											end
+										end
+										if hasFloat then break end
+									end
+									if hasFloat then
+										toml = toml .. string.format("%.1f", vvv)
+									else
+										toml = toml .. tostring(vvv)
+									end
+								else
+									toml = toml .. tostring(vvv)
+								end
+								first_inner = false
+							end
+							toml = toml .. "]"
+							first_outer = false
+						end
+						toml = toml .. "]\n"
+					else
+						-- This is a simple array, use multi-line format
+						toml = toml .. encodeKey(k) .. " = [\n"
+						for kk, vv in pairs(v) do
+							if type(vv) == "string" then
+								local escaped_string = vv
+								escaped_string = escaped_string:gsub("\\", "\\\\")
+								escaped_string = escaped_string:gsub("\b", "\\b")
+								escaped_string = escaped_string:gsub("\t", "\\t")
+								escaped_string = escaped_string:gsub("\f", "\\f")
+								escaped_string = escaped_string:gsub("\r", "\\r")
+								escaped_string = escaped_string:gsub("\n", "\\n")
+								escaped_string = escaped_string:gsub('"', '\\"')
+								toml = toml .. '"' .. escaped_string .. '",\n'
+							else
+								toml = toml .. tostring(vv) .. ",\n"
+							end
+						end
+						toml = toml .. "]\n"
+					end
+				end
+			end
+		end
+		
+		-- Third pass: handle hash table values and arrays of tables
+		for _, k in ipairs(keys) do
+			local v = tbl[k]
+			if type(v) == "table" and getmetatable(v) ~= date_metatable then
+				-- Check if this is an array (all numeric keys)
+				local isArray = true
+				local isArrayOfHashTables = true
+				for kk, vv in pairs(v) do
+					if type(kk) ~= "number" then
+						isArray = false
+						break
+					end
+					if type(vv) ~= "table" then
+						isArrayOfHashTables = false
+					else
+						-- Check if the inner table is a hash table (has non-numeric keys)
+						local isHashTable = false
+						local hasKeys = false
+						for kkk, vvv in pairs(vv) do
+							hasKeys = true
+							if type(kkk) ~= "number" then
+								isHashTable = true
+								break
+							end
+						end
+						-- Empty tables are considered hash tables for array of tables syntax
+						if hasKeys and not isHashTable then
+							isArrayOfHashTables = false
+						end
+					end
+				end
+				
+				if isArray and isArrayOfHashTables then
+					-- This is an array of hash tables, use [[table]] syntax
+					for kk, vv in pairs(v) do
+						toml = toml .. "[[" .. encodeKey(k) .. "]]\n"
+						if type(vv) == "table" then
+							parse(vv)
+						end
+					end
+				elseif not isArray then
 				local array, arrayTable = true, true
 				local first = {}
 				local tableCopy = {}
@@ -1126,7 +1493,7 @@ TOML.encode = function(tbl)
 						
 						if innerTablesAreArrays then
 							-- This is an array of arrays, encode as nested array
-							toml = toml .. k .. " = ["
+							toml = toml .. encodeKey(k) .. " = ["
 							
 							-- Check if any element in any array is a float to determine formatting
 							local hasFloat = false
@@ -1174,7 +1541,7 @@ TOML.encode = function(tbl)
 							-- double bracket syntax go!
 							table.insert(cache, k)
 							for kk, vv in pairs(tableCopy) do
-								toml = toml .. "[[" .. table.concat(cache, ".") .. "]]\n"
+								toml = toml .. "[[" .. encodeDottedName(cache) .. "]]\n"
 								local tableCopyInner = {}
 								local firstInner = {}
 								local sortedKeys = getSortedKeys(vv)
@@ -1193,7 +1560,7 @@ TOML.encode = function(tbl)
 						end
 					else
 						-- plain ol boring array
-						toml = toml .. k .. " = [\n"
+						toml = toml .. encodeKey(k) .. " = [\n"
 						local quote = '"'
 						for kk, vv in pairs(first) do
 							if type(vv) == "string" then
@@ -1215,12 +1582,13 @@ TOML.encode = function(tbl)
 				else
 					-- just a key/value table, folks
 					table.insert(cache, k)
-					toml = toml .. "[" .. table.concat(cache, ".") .. "]\n"
+					toml = toml .. "[" .. encodeDottedName(cache) .. "]\n"
 					parse(first)
 					parse(tableCopy)
 					table.remove(cache)
 				end
 			end
+		end
 		end
 	end
 	
