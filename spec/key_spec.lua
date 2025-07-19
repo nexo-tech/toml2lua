@@ -124,4 +124,37 @@ a# = 1
 		assert.same(nil, obj)
 		assert.same('string', type(err))
 	end)
+
+	it("quoted key with tab escape", function()
+		local obj = TOML.parse[=[
+"a\t" = "b"]=]
+		local sol = {
+			["a\t"] = "b",
+		}
+		assert.same(sol, obj)
+	end)
+
+	it("quoted key with tab in middle", function()
+		local obj = TOML.parse[=[
+"a\tb" = "b"]=]
+		local sol = {
+			["a\tb"] = "b",
+		}
+		assert.same(sol, obj)
+	end)
+
+	it("quoted key with other escapes", function()
+		local obj = TOML.parse[=[
+"a\n" = "newline"
+"b\r" = "carriage"
+"c\\" = "backslash"
+"d\"" = "quote"]=]
+		local sol = {
+			["a\n"] = "newline",
+			["b\r"] = "carriage", 
+			["c\\"] = "backslash",
+			["d\""] = "quote",
+		}
+		assert.same(sol, obj)
+	end)
 end)

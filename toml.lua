@@ -758,8 +758,10 @@ TOML.multistep_parser = function (options)
 				step()
 				skipWhitespace()
 				
-				-- trim key name
-				buffer = trim(buffer)
+				-- trim key name (only for unquoted keys)
+				if not quotedKey then
+					buffer = trim(buffer)
+				end
 
 				if not quotedKey then check_key() end
 
@@ -821,7 +823,9 @@ TOML.multistep_parser = function (options)
 						quotedKey = true
 					elseif char() == "." then
 						step() -- skip period
-						buffer = trim(buffer)
+						if not quotedKey then
+							buffer = trim(buffer)
+						end
 						if not quotedKey then check_key() end
 						processKey(false, tableArray, quotedKey)
 						buffer = ""
@@ -841,7 +845,9 @@ TOML.multistep_parser = function (options)
 					end
 				end
 				step() -- skip outside bracket
-				buffer = trim(buffer)
+				if not quotedKey then
+					buffer = trim(buffer)
+				end
 				if not quotedKey then check_key() end
 				processKey(true, tableArray, quotedKey)
 				buffer = ""
@@ -857,7 +863,9 @@ TOML.multistep_parser = function (options)
 				quotedKey = true
 
 			else
-				buffer = buffer .. (matchnl() and "" or char())
+				if not quotedKey then
+					buffer = buffer .. (matchnl() and "" or char())
+				end
 				step()
 			end
 		end
