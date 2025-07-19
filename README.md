@@ -6,7 +6,7 @@
 
 > **TOML parsing that doesn't suck** 🚀
 
-A battle-tested, zero-dependency TOML parser/encoder for Lua that actually works. Built for developers who need config files that don't break at 3AM.
+A battle-tested, zero-dependency TOML parser/encoder for Lua that just works. 
 
 ## 🎯 Why This Exists
 
@@ -69,8 +69,7 @@ local toml_string = TOML.encode({
 
 ### 🛡️ Battle-Tested
 - **200+ test cases** covering edge cases and real-world scenarios
-- **TOML test suite** compatibility
-- **Used in production** by teams that can't afford config failures
+- **TOML test suite** compatibility (work in progress)
 
 ## 📖 API Reference
 
