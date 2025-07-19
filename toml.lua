@@ -440,6 +440,42 @@ TOML.multistep_parser = function (options)
 		local date = false
 		local dotfound = false
 		local prev_underscore = false
+		
+		-- Support for hex, octal, and binary numbers
+		local prefixes = { ["0x"] = 16, ["0o"] = 8, ["0b"] = 2 }
+		local base = prefixes[char() .. char(1)]
+		if base then
+			step(2)
+			local digits = ({ [2] = "[01]", [8] = "[0-7]", [16] = "%x" })[base]
+			local prev_underscore_alt = false
+			while(bounds()) do
+				if char():match(digits) then
+					num = num .. char()
+					prev_underscore_alt = false
+				elseif matchWs() or char() == "#" or matchnl() or char() == "," or char() == "]" or char() == "}" then
+					break
+				elseif char() == "_" then
+					if prev_underscore_alt then
+						err("Double underscore in number")
+					end
+					if num == "" then
+						err("Underscore cannot be at beginning of number")
+					end
+					prev_underscore_alt = true
+				else
+					err("Invalid number")
+				end
+				step()
+			end
+			if prev_underscore_alt then
+				err("Invalid underscore at end of number")
+			end
+			if num == "" then
+				err("Invalid number")
+			end
+			return {value = tonumber(num, base), type = "integer"}
+		end
+		
 		while(bounds()) do
 			if char():match("[%+%-%.eE_0-9]") then
 				if char():match'%.' then dotfound = true end

@@ -45,4 +45,17 @@ answer = 042
 		assert.same(nil, obj)
 		assert.same('string', type(err))
 	end)
+
+	it("base numbers", function()
+		local obj = TOML.parse[=[
+hex = 0xFF
+oct = 0o777  
+bin = 0b1010]=]
+		local sol = {
+			hex = 255,
+			oct = 511,  -- 0o777 = 7*64 + 7*8 + 7*1 = 448 + 56 + 7 = 511
+			bin = 10,
+		}
+		assert.same(sol, obj)
+	end)
 end)
