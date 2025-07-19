@@ -974,12 +974,14 @@ TOML.encode = function(tbl)
 			elseif type(v) == "table" then
 				local array, arrayTable = true, true
 				local first = {}
+				local tableCopy = {}
 				for kk, vv in pairs(v) do
 					if type(kk) ~= "number" then array = false end
 					if type(vv) ~= "table" then
-						v[kk] = nil
 						first[kk] = vv
 						arrayTable = false
+					else
+						tableCopy[kk] = vv
 					end
 				end
 
@@ -987,7 +989,7 @@ TOML.encode = function(tbl)
 					if arrayTable then
 						-- Check if inner tables are arrays (all numeric keys) or hash tables
 						local innerTablesAreArrays = true
-						for kk, vv in pairs(v) do
+						for kk, vv in pairs(tableCopy) do
 							for k3, v3 in pairs(vv) do
 								if type(k3) ~= "number" then
 									innerTablesAreArrays = false
@@ -1005,7 +1007,7 @@ TOML.encode = function(tbl)
 							
 							-- Check if any element in any array is a float to determine formatting
 							local hasFloat = false
-							for kk, vv in pairs(v) do
+							for kk, vv in pairs(tableCopy) do
 								for k3, v3 in pairs(vv) do
 									if type(v3) == "number" and v3 ~= math.floor(v3) then
 										hasFloat = true
@@ -1016,7 +1018,7 @@ TOML.encode = function(tbl)
 							end
 							
 							local first_element = true
-							for kk, vv in pairs(v) do
+							for kk, vv in pairs(tableCopy) do
 								if not first_element then
 									toml = toml .. ", "
 								end
@@ -1048,18 +1050,21 @@ TOML.encode = function(tbl)
 						else
 							-- double bracket syntax go!
 							table.insert(cache, k)
-							for kk, vv in pairs(v) do
+							for kk, vv in pairs(tableCopy) do
 								toml = toml .. "[[" .. table.concat(cache, ".") .. "]]\n"
+								local tableCopyInner = {}
+								local firstInner = {}
 								local sortedKeys = getSortedKeys(vv)
 								for _, k3 in ipairs(sortedKeys) do
 									local v3 = vv[k3]
 									if type(v3) ~= "table" then
-										vv[k3] = nil
-										first[k3] = v3
+										firstInner[k3] = v3
+									else
+										tableCopyInner[k3] = v3
 									end
 								end
-								parse(first)
-								parse(vv)
+								parse(firstInner)
+								parse(tableCopyInner)
 							end
 							table.remove(cache)
 						end
@@ -1069,7 +1074,15 @@ TOML.encode = function(tbl)
 						local quote = '"'
 						for kk, vv in pairs(first) do
 							if type(vv) == "string" then
-								toml = toml .. quote .. tostring(vv) .. quote .. ",\n"
+								local escaped_string = vv
+								escaped_string = escaped_string:gsub("\\", "\\\\")
+								escaped_string = escaped_string:gsub("\b", "\\b")
+								escaped_string = escaped_string:gsub("\t", "\\t")
+								escaped_string = escaped_string:gsub("\f", "\\f")
+								escaped_string = escaped_string:gsub("\r", "\\r")
+								escaped_string = escaped_string:gsub("\n", "\\n")
+								escaped_string = escaped_string:gsub('"', '\\"')
+								toml = toml .. quote .. escaped_string .. quote .. ",\n"
 							else
 								toml = toml .. tostring(vv) .. ",\n"
 							end
@@ -1081,7 +1094,7 @@ TOML.encode = function(tbl)
 					table.insert(cache, k)
 					toml = toml .. "[" .. table.concat(cache, ".") .. "]\n"
 					parse(first)
-					parse(v)
+					parse(tableCopy)
 					table.remove(cache)
 				end
 			end
