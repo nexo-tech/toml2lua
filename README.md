@@ -23,11 +23,11 @@ the TOML changelog):
 
 To process a file in multiple chunks:
 
-	local parser = TOML.multistep_parser()
-	parser(string_part_1)
-	parser(string_part_2)
-	-- ...
-	local result = parser()
+    local parser = TOML.multistep_parser()
+    parser(string_part_1)
+    parser(string_part_2)
+    -- ...
+    local result = parser()
 
 To enable more lua-friendly features (like mixed arrays):
 
@@ -39,7 +39,7 @@ or:
 
 or:
 
-	local parser = TOML.multistep_parser{strict = false}
+    local parser = TOML.multistep_parser{strict = false}
 
 In case of error, nil plus an error message is returned.
 
@@ -65,7 +65,7 @@ This fork is maintained by [Oleg Pustovit](https://github.com/nexo-tech), buildi
 
 Includes pull requests and contributions from:
 
-- [Natanael Copa](https://github.com/ncopa) — fix encoding of plain ol borring arrays (issue #12)
-- [Luka Vandervelden](https://github.com/Lukc) — Lua 5.1 marked as supported in the rockspec. (issue #20)
+- [Natanael Copa](https://github.com/ncopa) — fix encoding of plain ol borring arrays (issue [#12](https://github.com/jonstoler/lua-toml/issues/12))
+- [Luka Vandervelden](https://github.com/Lukc) — Lua 5.1 marked as supported in the rockspec. (issue [#20](https://github.com/jonstoler/lua-toml/issues/20))
 - [Ekaterina Vaartis](https://github.com/vaartis) - Don't replace / with \/, because the library can't decode that back
--  Work on issues #11 #17 #22 (+ merged #20 by @mattwidmann and #18 by @OrenjiAkira) #23
+- Work on issues [#11](https://github.com/jonstoler/lua-toml/issues/11) [#17](https://github.com/jonstoler/lua-toml/issues/17) [#22](https://github.com/jonstoler/lua-toml/issues/22) (+ merged [#20](https://github.com/jonstoler/lua-toml/issues/20) by [@mattwidmann](https://github.com/mattwidmann) and [#18](https://github.com/jonstoler/lua-toml/issues/18) by [@OrenjiAkira](https://github.com/OrenjiAkira)) [#23](https://github.com/jonstoler/lua-toml/issues/23)
