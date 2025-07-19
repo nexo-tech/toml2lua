@@ -929,20 +929,82 @@ TOML.encode = function(tbl)
 
 				if array then
 					if arrayTable then
-						-- double bracket syntax go!
-						table.insert(cache, k)
+						-- Check if inner tables are arrays (all numeric keys) or hash tables
+						local innerTablesAreArrays = true
 						for kk, vv in pairs(v) do
-							toml = toml .. "[[" .. table.concat(cache, ".") .. "]]\n"
 							for k3, v3 in pairs(vv) do
-								if type(v3) ~= "table" then
-									vv[k3] = nil
-									first[k3] = v3
+								if type(k3) ~= "number" then
+									innerTablesAreArrays = false
+									break
 								end
 							end
-							parse(first)
-							parse(vv)
+							if not innerTablesAreArrays then
+								break
+							end
 						end
-						table.remove(cache)
+						
+						if innerTablesAreArrays then
+							-- This is an array of arrays, encode as nested array
+							toml = toml .. k .. " = ["
+							
+							-- Check if any element in any array is a float to determine formatting
+							local hasFloat = false
+							for kk, vv in pairs(v) do
+								for k3, v3 in pairs(vv) do
+									if type(v3) == "number" and v3 ~= math.floor(v3) then
+										hasFloat = true
+										break
+									end
+								end
+								if hasFloat then break end
+							end
+							
+							local first_element = true
+							for kk, vv in pairs(v) do
+								if not first_element then
+									toml = toml .. ", "
+								end
+								toml = toml .. "["
+								local first_inner = true
+								
+								for k3, v3 in pairs(vv) do
+									if not first_inner then
+										toml = toml .. ", "
+									end
+									if type(v3) == "string" then
+										toml = toml .. '"' .. v3 .. '"'
+									elseif type(v3) == "number" then
+										if hasFloat then
+											-- Format all numbers as floats for consistency
+											toml = toml .. string.format("%.1f", v3)
+										else
+											toml = toml .. tostring(v3)
+										end
+									else
+										toml = toml .. tostring(v3)
+									end
+									first_inner = false
+								end
+								toml = toml .. "]"
+								first_element = false
+							end
+							toml = toml .. "]\n"
+						else
+							-- double bracket syntax go!
+							table.insert(cache, k)
+							for kk, vv in pairs(v) do
+								toml = toml .. "[[" .. table.concat(cache, ".") .. "]]\n"
+								for k3, v3 in pairs(vv) do
+									if type(v3) ~= "table" then
+										vv[k3] = nil
+										first[k3] = v3
+									end
+								end
+								parse(first)
+								parse(vv)
+							end
+							table.remove(cache)
+						end
 					else
 						-- plain ol boring array
 						toml = toml .. k .. " = [\n"
