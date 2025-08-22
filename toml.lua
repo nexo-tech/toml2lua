@@ -1053,7 +1053,7 @@ TOML.multistep_parser = function(options)
 		while (bounds()) do
 			-- skip comments and whitespace
 			-- Only treat # as comment if we're not in the middle of parsing a key
-			if char() == "#" and (buffer == "" or quotedKey) then
+			if char() == "#" and (trim(buffer) == "" or quotedKey) then
 				while (bounds() and not matchnl()) do
 					step()
 				end
