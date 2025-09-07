@@ -1,3 +1,7 @@
+# 3.0.1
+
+- fix parsing of comments with leading whitespace
+
 # 3.0.0
 
 - upgrade to TOML v1.0.0 specification compliance
