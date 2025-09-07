@@ -2,7 +2,7 @@
 
 [![Lua](https://img.shields.io/badge/Lua-5.1+-blue.svg)](https://www.lua.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-3.0.0-orange.svg)](https://github.com/nexo-tech/toml2lua)
+[![Version](https://img.shields.io/badge/Version-3.0.1-orange.svg)](https://github.com/nexo-tech/toml2lua)
 
 > **TOML parsing that doesn't suck** 🚀
 
