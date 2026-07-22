@@ -148,8 +148,8 @@ local date_metatable = {
 			rep = rep .. string.format("%02d:%02d:", t.hour, t.min)
 			local sec, frac = math.modf(t.sec)
 			rep = rep .. string.format("%02d", sec)
-			if frac > 0 then
-				rep = rep .. tostring(frac):gsub("0(.-)0*$", "%1")
+			if frac >= 1e-9 / 2 then
+				rep = rep .. string.format("%0.9f", frac):gsub("0(.-)0*$", "%1")
 			end
 		end
 		if t.zone then
